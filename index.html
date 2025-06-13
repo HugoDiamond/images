@@ -115,8 +115,8 @@
     <script>
         // Create a new Image object for the template
         const templateImage = new Image();
-        // Using the Cloudinary URL for your template.jpg - this is the most reliable option for CORS.
-        templateImage.src = 'https://res.cloudinary.com/doi8kbijl/image/upload/v1749769936/template_fdapyn.jpg';
+        // Updated to use the transparent PNG from Cloudinary
+        templateImage.src = 'https://res.cloudinary.com/doi8kbijl/image/upload/v1749774020/Template_ylw5lr.png';
         templateImage.crossOrigin = 'Anonymous'; // Essential for drawing images from other origins onto canvas without tainting it
 
         // Get references to DOM elements
@@ -140,7 +140,7 @@
         const nationalityToFlagCode = {
             'UK': 'gb', 'USA': 'us', 'Ireland': 'ie', 'Germany': 'de', 'France': 'fr',
             'Netherlands': 'nl', 'Sweden': 'se', 'Norway': 'no', 'Denmark': 'dk',
-            'Spain': 'es', 'Italy': 'it', 'Canada': 'ca', 'Australia': 'au',
+            'Spain': 'es', 'it': 'it', 'Canada': 'ca', 'Australia': 'au', // Added 'it' for Italy flag
             'New Zealand': 'nz', 'Belgium': 'be', 'Switzerland': 'ch', 'Austria': 'at',
             'Poland': 'pl', 'Finland': 'fi', 'Portugal': 'pt', 'Japan': 'jp', 'China': 'cn',
             'India': 'in', 'Brazil': 'br', 'Mexico': 'mx', 'Argentina': 'ar', 'South Africa': 'za'
