@@ -1,0 +1,540 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Namebadge Generator</title>
+    <!-- Load Tailwind CSS for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load JSZip library for zipping files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Load FileSaver.js for saving files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        /* Import Inter font from Google Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif; /* Apply Inter font */
+            background-color: #f0f2f5; /* Light grey background for the page */
+        }
+        /* Styling for a basic loading spinner */
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid #3498db; /* Blue spinner color */
+            border-radius: 50%; /* Make it circular */
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite; /* Spin animation */
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Custom modal for displaying messages to the user */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 1000; /* Sit on top of everything */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+            overflow: auto; /* Enable scroll if content is too large */
+            background-color: rgba(0,0,0,0.4); /* Black background with transparency */
+            display: flex; /* Use flexbox for centering */
+            align-items: center; /* Center vertically */
+            justify-content: center; /* Center horizontally */
+        }
+        .modal-content {
+            background-color: #fefefe; /* White background */
+            padding: 20px;
+            border-radius: 8px; /* Rounded corners */
+            width: 80%; /* 80% width */
+            max-width: 400px; /* Max width to prevent it from being too wide */
+            text-align: center;
+            position: relative;
+        }
+        .close-button {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer; /* Indicate it's clickable */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-4xl w-full bg-white p-8 rounded-lg shadow-xl space-y-6">
+        <h1 class="text-3xl font-bold text-gray-900 text-center mb-6">Namebadge Generator</h1>
+
+
+        <!-- Message box modal -->
+        <div id="messageBox" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="close-button" onclick="closeMessageBox()">&times;</span>
+                <p id="messageText" class="text-lg text-gray-800"></p>
+            </div>
+        </div>
+
+
+        <div class="space-y-4">
+            <p class="text-gray-700 text-center">
+                This application generates graphic overlays for namebadges.
+                Upload your CSV file and click 'Generate Namebadges'.
+            </p>
+        </div>
+
+
+        <!-- CSV Upload Input -->
+        <div class="mt-6">
+            <label for="csvFileInput" class="block text-sm font-medium text-gray-700 mb-2">Upload CSV File:</label>
+            <input type="file" id="csvFileInput" accept=".csv"
+                   class="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2">
+            <p id="fileNameDisplay" class="text-gray-500 text-sm mt-1">No file chosen</p>
+        </div>
+
+
+        <!-- Button to trigger overlay generation -->
+        <div class="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+            <button id="generateButton" disabled
+                    class="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white font-semibold rounded-md shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-150 ease-in-out opacity-50 cursor-not-allowed">
+                <span id="buttonText">Generate Namebadges</span>
+                <div id="loadingSpinner" class="loading-spinner ml-2" style="display: none;"></div>
+            </button>
+        </div>
+
+
+        <!-- Single Download All Button -->
+        <div id="downloadAllContainer" class="flex justify-center mt-8 hidden">
+            <button id="downloadAllButton"
+                    class="px-8 py-4 bg-green-700 text-white font-bold rounded-lg shadow-xl hover:bg-green-800 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-offset-2 transition duration-200 ease-in-out">
+                Download All Generated Badges (.zip)
+            </button>
+        </div>
+
+
+        <!-- Hidden canvas element used for drawing and manipulating images -->
+        <canvas id="imageCanvas" width="1920" height="1080" class="hidden"></canvas>
+    </div>
+
+
+    <script>
+        // Create a new Image object for the template
+        const templateImage = new Image();
+        // Updated to use the transparent PNG from Cloudinary
+        templateImage.src = 'https://res.cloudinary.com/doi8kbijl/image/upload/v1749774020/Template_ylw5lr.png';
+        templateImage.crossOrigin = 'Anonymous'; // Essential for drawing images from other origins onto canvas without tainting it
+
+
+        // Get references to DOM elements
+        const canvas = document.getElementById('imageCanvas');
+        const ctx = canvas.getContext('2d'); // Get 2D rendering context
+        const generateButton = document.getElementById('generateButton');
+        const buttonText = document.getElementById('buttonText');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const messageBox = document.getElementById('messageBox');
+        const messageText = document.getElementById('messageText');
+        const downloadAllContainer = document.getElementById('downloadAllContainer');
+        const downloadAllButton = document.getElementById('downloadAllButton');
+        const csvFileInput = document.getElementById('csvFileInput'); // CSV file input
+        const fileNameDisplay = document.getElementById('fileNameDisplay'); // Display chosen file name
+
+
+        let generatedImageBlobs = []; // Array to store generated image blobs for zipping
+        let currentEventName = 'namebadges'; // Default zip name, updated by sheet data
+        let csvData = []; // Store parsed CSV data
+
+
+        // Mapping common nationalities to their 2-letter ISO country codes
+        const nationalityToFlagCode = {
+            'UK': 'gb', 'USA': 'us', 'Ireland': 'ie', 'Germany': 'de', 'France': 'fr',
+            'Netherlands': 'nl', 'Sweden': 'se', 'Norway': 'no', 'Denmark': 'dk',
+            'Spain': 'es', 'it': 'it', 'Canada': 'ca', 'Australia': 'au', // Added 'it' for Italy flag
+            'New Zealand': 'nz', 'Belgium': 'be', 'Switzerland': 'ch', 'Austria': 'at',
+            'Poland': 'pl', 'Finland': 'fi', 'Portugal': 'pt', 'Japan': 'jp', 'China': 'cn',
+            'India': 'in', 'Brazil': 'br', 'Mexico': 'mx', 'Argentina': 'ar', 'South Africa': 'za'
+        };
+
+
+        /**
+         * Displays a message in a custom modal window.
+         * @param {string} message The message text to be displayed.
+         * @param {string} type The type of message ('info', 'success', 'error') for optional styling.
+         */
+        function showMessageBox(message, type = 'info') {
+            messageText.textContent = message;
+            messageBox.style.display = 'flex'; // Show the modal
+            if (type === 'error') {
+                messageText.classList.add('text-red-600');
+            } else {
+                messageText.classList.remove('text-red-600');
+            }
+        }
+
+
+        /**
+         * Hides the custom message modal.
+         */
+        function closeMessageBox() {
+            messageBox.style.display = 'none'; // Hide the modal
+        }
+
+
+        /**
+         * Controls the loading state of the generation button (disables it and shows a spinner).
+         * @param {boolean} isLoading True to activate loading state, false to deactivate.
+         */
+        function setLoading(isLoading) {
+            // Button is enabled only if template image is loaded AND CSV data is present
+            const isTemplateLoaded = templateImage.complete && templateImage.naturalHeight !== 0;
+            const isCsvLoaded = csvData.length > 0;
+            const isReadyToGenerate = isTemplateLoaded && isCsvLoaded;
+
+
+            if (!isLoading && isReadyToGenerate) {
+                 generateButton.disabled = false;
+                 generateButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                generateButton.disabled = true;
+                generateButton.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+
+
+            if (isLoading) {
+                buttonText.textContent = 'Generating...';
+                loadingSpinner.style.display = 'block';
+                downloadAllContainer.classList.add('hidden'); // Hide download button during generation
+            } else {
+                buttonText.textContent = 'Generate Namebadges';
+                loadingSpinner.style.display = 'none';
+            }
+        }
+
+
+        /**
+         * Draws the template image, text overlays (Rider Name, Horse Name),
+         * and the national flag onto the canvas.
+         * @param {object} dataRow An object containing competitorNum, horseName, riderName, and nationality.
+         * @returns {Promise<Blob>} A promise that resolves with the Blob of the generated image.
+         */
+        async function drawOverlay(dataRow) {
+            return new Promise(async (resolve, reject) => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the entire canvas before drawing
+
+
+                // 1. Draw the base template image, scaling it to fit the canvas
+                ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
+
+
+                // Define positions and sizes based on the user's provided 1920x1080px measurements.
+                // Shifted right by 10px, then flag moved left by 2px (others stay at +8px, flag at +6px from original measured x)
+                const textShiftRight = 8;
+                const flagShiftRight = 6; // Adjusted for the -2px flag move from previous position
+
+
+                // Flag: 81 x 60px, centre point x63 y1014
+                const flagX = (63 - (81 / 2)) + flagShiftRight;
+                const flagY = 1014 - (60 / 2);
+                const flagWidth = 81;
+                const flagHeight = 60;
+
+
+                // Rider name "Imogen Addison": 185 x 23px, center point x204 y998
+                const riderNameX = (204 - (185 / 2)) + textShiftRight;
+                const riderNameFontSize = 22;
+                const riderNameY = 998 + (23 / 2) - (riderNameFontSize * 0.2);
+
+
+                // Horse name "Outdazzle": 146 x 33px, center point x193 y1035
+                const horseNameX = (193 - (146 / 2)) + textShiftRight;
+                const horseNameFontSize = 32;
+                const horseNameY = 1035 + (33 / 2) - (horseNameFontSize * 0.2);
+
+
+
+
+                // Set text styling (color, alignment, and shadow for readability)
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'left';
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+                ctx.shadowBlur = 5;
+                ctx.shadowOffsetX = 3;
+                ctx.shadowOffsetY = 3;
+
+
+                // 2. Draw Rider Name (from Column D)
+                ctx.font = `bold ${riderNameFontSize}px Inter`;
+                ctx.fillText(dataRow.riderName, riderNameX, riderNameY);
+
+
+                // 3. Draw Horse Name (from Column C)
+                ctx.font = `bold ${horseNameFontSize}px Inter`;
+                ctx.fillText(dataRow.horseName, horseNameX, horseNameY);
+
+
+                // Reset shadow properties
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+
+
+                // 4. Draw Nationality Flag (from Column E)
+                const flagCode = nationalityToFlagCode[dataRow.nationality];
+                if (flagCode) {
+                    const flagImageUrl = `https://flagcdn.com/w160/${flagCode}.png`;
+                    const flagImage = new Image();
+                    flagImage.crossOrigin = 'Anonymous';
+                    flagImage.onload = () => {
+                        ctx.drawImage(flagImage, flagX, flagY, flagWidth, flagHeight);
+                        canvas.toBlob(blob => {
+                            resolve(blob);
+                        }, 'image/png');
+                    };
+                    flagImage.onerror = () => {
+                        console.warn(`Could not load flag for ${dataRow.nationality} (${flagCode}). Image will be generated without this flag.`);
+                        canvas.toBlob(blob => {
+                            resolve(blob);
+                        }, 'image/png');
+                    };
+                    flagImage.src = flagImageUrl;
+                } else {
+                    console.warn(`No flag code found for nationality: ${dataRow.nationality}. Image will be generated without a flag.`);
+                    canvas.toBlob(blob => {
+                        resolve(blob);
+                    }, 'image/png');
+                }
+            });
+        }
+
+
+        /**
+         * Parses CSV text into an array of objects.
+         * Assumes first row is header.
+         * @param {string} text The raw CSV text.
+         * @returns {Array<Object>} Parsed data.
+         */
+        function parseCSV(text) {
+            console.log('parseCSV: Starting CSV parse.');
+            const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== ''); // Split by line breaks, filter empty lines
+            if (lines.length === 0) {
+                console.log('parseCSV: No non-empty lines found in CSV.');
+                return [];
+            }
+
+
+            const headers = lines[0].split(',').map(h => h.trim()); // Assume comma delimiter, trim whitespace
+            console.log('parseCSV: Headers detected:', headers);
+            const data = [];
+
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',').map(v => v.trim());
+                console.log(`parseCSV: Processing line ${i}, values:`, values);
+                if (values.length >= 5) { // Ensure enough columns (Event, Comp#, Horse, Rider, Nationality)
+                    data.push({
+                        event: values[0],
+                        competitorNum: values[1],
+                        horseName: values[2],
+                        riderName: values[3],
+                        nationality: values[4]
+                    });
+                } else {
+                    console.warn('parseCSV: Skipping CSV row due to insufficient columns:', lines[i], 'Expected at least 5, got', values.length);
+                }
+            }
+            console.log('parseCSV: Finished parsing. Total data rows:', data.length);
+            return data;
+        }
+
+
+        /**
+         * Main function to orchestrate the generation of all overlays from CSV data.
+         */
+        async function generateOverlays() {
+            setLoading(true);
+            generatedImageBlobs = [];
+            downloadAllContainer.classList.add('hidden');
+
+
+            if (csvData.length === 0) {
+                showMessageBox('Please upload a CSV file with data first.', 'info');
+                setLoading(false);
+                return;
+            }
+
+
+            try {
+                // Determine the primary event name from the first valid row of the uploaded CSV
+                let primaryEventName = '';
+                if (csvData.length > 0 && csvData[0].event) {
+                    primaryEventName = csvData[0].event.trim();
+                }
+
+
+                if (!primaryEventName) {
+                    showMessageBox('The uploaded CSV does not contain a valid Event Name in the first data row (Column A). Cannot proceed.', 'error');
+                    setLoading(false);
+                    return;
+                }
+
+
+                // Filter the entire CSV data by this primary event name
+                const filteredData = csvData.filter(row => row.event.toLowerCase() === primaryEventName.toLowerCase());
+                console.log('generateOverlays: Filtered data count for event "'+primaryEventName+'":', filteredData.length);
+
+
+
+
+                if (filteredData.length === 0) {
+                    showMessageBox(`No data found for event: "${primaryEventName}" in the uploaded CSV. Please check the CSV content.`, 'info');
+                    setLoading(false);
+                    return;
+                }
+
+
+                // Set the current event name for zip naming based on the filtered data
+                currentEventName = primaryEventName.replace(/[^a-zA-Z0-9_\- ]/g, ''); // Sanitize for filename
+
+
+                for (const row of filteredData) { // Use filtered data
+                    const { competitorNum, horseName, riderName, nationality } = row;
+
+
+                    if (!competitorNum || !horseName || !riderName || !nationality) {
+                        console.warn('generateOverlays: Skipping row due to missing essential data (Competitor #, Horse Name, Rider Name, or Nationality):', row);
+                        continue;
+                    }
+
+
+                    const imageBlob = await drawOverlay({ competitorNum, horseName, riderName, nationality });
+                    generatedImageBlobs.push({ filename: `${competitorNum}.png`, blob: imageBlob }); // Changed filename output
+                }
+
+
+                if (generatedImageBlobs.length > 0) {
+                    downloadAllContainer.classList.remove('hidden');
+                    showMessageBox(`Generated ${generatedImageBlobs.length} namebadges for "${currentEventName}". Click 'Download All' to get the zip file.`, 'success');
+                } else {
+                    showMessageBox(`No namebadges were generated for event "${currentEventName}". This might mean no valid entries were found or data is incomplete in the uploaded CSV.`, 'info');
+                }
+
+
+            } catch (error) {
+                console.error('Failed to generate overlays from CSV:', error);
+                showMessageBox(`Failed to generate namebadges from CSV: ${error.message}. Please check the console for details.`, 'error');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+
+        /**
+         * Zips all generated image blobs and initiates download.
+         */
+        async function downloadAllImages() {
+            if (generatedImageBlobs.length === 0) {
+                showMessageBox('No images to download.', 'info');
+                return;
+            }
+
+
+            showMessageBox('Preparing zip file for download...', 'info');
+            const zip = new JSZip();
+
+
+            generatedImageBlobs.forEach(item => {
+                zip.file(item.filename, item.blob);
+            });
+
+
+            const zipFileName = `${currentEventName}_namebadges.zip`;
+
+
+            zip.generateAsync({ type: 'blob' })
+                .then(function(content) {
+                    saveAs(content, zipFileName);
+                    showMessageBox(`${zipFileName} is ready for download!`, 'success');
+                })
+                .catch(error => {
+                    console.error('Error zipping files:', error);
+                    showMessageBox(`Failed to create zip file: ${error.message}`, 'error');
+                });
+        }
+
+
+        // --- Event Listeners ---
+        // Initially disable button until template loads AND CSV is uploaded
+        generateButton.disabled = true;
+        generateButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+
+        // Template image load handler
+        templateImage.onload = () => {
+            console.log('Template image loaded successfully. Dimensions:', templateImage.naturalWidth, 'x', templateImage.naturalHeight);
+            setLoading(false); // This will re-evaluate and enable button if CSV is also ready
+        };
+
+
+        // Template image error handler
+        templateImage.onerror = (e) => {
+            console.error('Error: template image could not be loaded.', e);
+            console.error('Attempted URL:', templateImage.src);
+            showMessageBox(`Critical Error: Template image failed to load from ${templateImage.src}. Please ensure it's a direct link and has correct CORS headers. (Check browser console F12 > Network tab).`, 'error');
+            setLoading(false); // Ensure button stays disabled on template error
+        };
+
+
+        // CSV file input change handler
+        csvFileInput.addEventListener('change', (event) => {
+            console.log('CSV file input changed.');
+            const file = event.target.files[0];
+            if (file) {
+                fileNameDisplay.textContent = file.name;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    console.log('FileReader: CSV file read successfully.');
+                    // console.log('FileReader: Raw CSV content:', e.target.result); // Log raw content for debugging
+                    try {
+                        csvData = parseCSV(e.target.result);
+                        console.log('FileReader: Parsed CSV data length:', csvData.length);
+                        if (csvData.length > 0) {
+                            showMessageBox(`CSV "${file.name}" loaded successfully. ${csvData.length} data rows found.`, 'success');
+                            setLoading(false); // Re-evaluate button state
+                        } else {
+                            showMessageBox('CSV file loaded, but no valid data rows found. Please check content.', 'info');
+                            csvData = []; // Clear data if empty
+                            setLoading(false);
+                        }
+                    } catch (parseError) {
+                        console.error('Error parsing CSV:', parseError);
+                        showMessageBox(`Error parsing CSV file: ${parseError.message}. Please ensure it's a valid CSV format.`, 'error');
+                        csvData = []; // Clear data on parse error
+                        setLoading(false);
+                    }
+                };
+                reader.onerror = (e) => {
+                    console.error('FileReader: Error reading CSV file:', e);
+                    showMessageBox(`Error reading CSV file: ${e.target.error}.`, 'error');
+                    csvData = [];
+                    setLoading(false);
+                };
+                reader.readAsText(file); // Read file as text
+            } else {
+                fileNameDisplay.textContent = 'No file chosen';
+                csvData = [];
+                setLoading(false);
+                console.log('CSV file input cleared.');
+            }
+        });
+
+
+        generateButton.addEventListener('click', generateOverlays);
+        downloadAllButton.addEventListener('click', downloadAllImages);
+
+
+        // Initial check for button state after template image load attempt
+        setLoading(false); // This will correctly set the initial state based on template image load
+    </script>
+</body>
+</html>
